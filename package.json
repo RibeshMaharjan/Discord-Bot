@@ -1,0 +1,22 @@
+{
+  "name": "discordbutt",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+<<<<<<< HEAD
+    "start": "node --env-file=.env --watch src/index.js",
+    "command": "node --env-file=.env src/command.js"
+=======
+    "start": "node --watch src/index.js"
+>>>>>>> a55ef49 (Bot Set Up)
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.16.3"
+  }
+}
