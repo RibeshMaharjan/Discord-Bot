@@ -1,4 +1,6 @@
 import {
+  AttachmentExtractor,
+  DefaultExtractors,
   SoundCloudExtractor,
   SpotifyExtractor,
 } from "@discord-player/extractor";
@@ -53,9 +55,15 @@ export default {
    *Add song to the queue
    *
    */
-  execute: async ({ client, interaction }) => {
+  execute: async ({ interaction }) => {
     // Get the player instance, song query and voice channel
     const player = useMainPlayer();
+
+    await player.extractors.loadMulti([
+      AttachmentExtractor,
+      SpotifyExtractor,
+      SoundCloudExtractor,
+    ]);
 
     const voiceChannel = interaction.member.voice.channel;
 
@@ -109,51 +117,36 @@ export default {
         });
 
       try {
-        const connection = joinVoiceChannel({
-          channelId: voiceChannel.id,
-          guildId: interaction.guild.id,
-          adapterCreator: interaction.guild.voiceAdapterCreator,
+        // Fetch video info using yt-dlp
+        const ytDlpWrap = new YTDlpWrap();
+        const metadata = await ytDlpWrap.getVideoInfo(url);
+
+        // Extract audio stream URL
+        const audioFormat = metadata.formats.find(
+          (format) => format.acodec === "opus" // Audio-only format
+        );
+
+        // console.log(metadata.formats);
+
+        if (!audioFormat) {
+          throw new Error("No audio stream found for this URL.");
+        }
+
+        const result = await player.play(voiceChannel, audioFormat.url, {
+          nodeOptions: {
+            metadata: { channel: interaction.channel },
+          },
         });
 
-        const audioBuffer = await downloadAudio(url);
-
-        // Create a PassThrough stream and write the buffer to it
-        const audioStream = new PassThrough();
-        audioStream.end(audioBuffer);
-
-        // Create an AudioResource from the PassThrough stream
-        const resource = createAudioResource(audioStream, {
-          inputType: StreamType.Arbitrary,
-        });
-
-        // Create an AudioPlayer and play the resource
-        const audioplayer = createAudioPlayer();
-        audioplayer.play(resource);
-        connection.subscribe(audioplayer);
-
-        // Handle playback events
-        audioplayer.on(AudioPlayerStatus.Idle, () => {
-          console.log("Playback finished.");
-          interaction.editReply("Playback finished.");
-        });
-
-        audioplayer.on("error", (error) => {
-          console.error("Error playing audio:", error);
-          interaction.editReply("Failed to play the audio.");
-        });
-
-        // const embed = new EmbedBuilder().setDescription(`Now playing audio!`);
-        const video = await fetchVideoInfo(url);
-
+        // Send an embed with the video info
         const embed = new EmbedBuilder()
           .setDescription(
-            `**${video.duration} songs from [${video.title}](${video.webpage_url})** have been added to the Queue`
+            `Added **[${metadata.title}](${metadata.webpage_url})** to the queue.`
           )
-          .setThumbnail(video.thumbnail ?? undefined);
+          .setThumbnail(metadata.thumbnail || null)
+          .setFooter({ text: `Duration: ${metadata.duration}` });
 
-        await interaction.editReply({
-          embeds: [embed],
-        });
+        await interaction.editReply({ embeds: [embed] });
       } catch (error) {
         console.error("Error downloading audio:", error);
         interaction.editReply("Failed to download or play the audio.");
@@ -198,16 +191,18 @@ export default {
         const ytDlpWrap = new YTDlpWrap();
 
         // Fetch playlist metadata
-        const info = await ytDlpWrap.exec([videoUrl, "-J"]);
-        console.log(info);
+        let metadata = await ytDlpWrap.getVideoInfo(videoUrl);
 
-        const video = JSON.parse(info);
+        const minute = Math.floor(metadata.duration / 60);
+        const second = metadata.duration % 60;
+
+        const duration = `${minute}:${second}`;
 
         return {
-          title: video.title,
-          url: video.webpage_url,
-          thumbnail: video.thumbnail || null,
-          duration: video.duration,
+          title: metadata.title,
+          url: metadata.webpage_url,
+          thumbnail: metadata.thumbnail || null,
+          duration: duration,
         };
       }
     } else if (interaction.options.getString("song")) {
