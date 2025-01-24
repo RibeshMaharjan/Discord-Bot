@@ -1,17 +1,27 @@
 import {
-  AttachmentExtractor,
-  DefaultExtractors,
   SoundCloudExtractor,
   SpotifyExtractor,
 } from "@discord-player/extractor";
-import { exec } from "child_process";
-import { useMainPlayer } from "discord-player";
+import {
+  AudioPlayerStatus,
+  createAudioPlayer,
+  createAudioResource,
+  joinVoiceChannel,
+  StreamType,
+} from "@discordjs/voice";
+import ytdl from "@distube/ytdl-core";
+import { PassThrough } from "stream";
+
+import { QueryType, useMainPlayer } from "discord-player";
+
 import {
   EmbedBuilder,
   PermissionsBitField,
-  REST,
   SlashCommandBuilder,
 } from "discord.js";
+
+import ytDlpWrapModule from "yt-dlp-wrap"; // Import the module
+const YTDlpWrap = ytDlpWrapModule.default; // Access the default export
 
 export default {
   data: new SlashCommandBuilder()
@@ -43,19 +53,17 @@ export default {
    *Add song to the queue
    *
    */
-  execute: async ({ interaction }) => {
+  execute: async ({ client, interaction }) => {
     // Get the player instance, song query and voice channel
     const player = useMainPlayer();
-    // Register the extractors
-    player.extractors.register(AttachmentExtractor, { name: "attachment" });
-    player.extractors.register(SpotifyExtractor, { name: "spotify" });
-    player.extractors.register(SoundCloudExtractor, { name: "soundcloud" });
 
     const voiceChannel = interaction.member.voice.channel;
 
+    await interaction.deferReply(); // Acknowledge the interaction to avoid timeouts
+
     // Check if the user is in a voice channel
     if (!voiceChannel) {
-      await interaction.reply("Your must be in a voice channel.");
+      await interaction.editReply("Your must be in a voice channel.");
       return;
     }
 
@@ -64,7 +72,7 @@ export default {
       interaction.guild.members.me.voice.channel &&
       interaction.guild.members.me.voice.channel !== voiceChannel
     ) {
-      return interaction.reply(
+      return interaction.editReply(
         "I am already playing in a different voice channel!"
       );
     }
@@ -75,7 +83,7 @@ export default {
         .permissionsFor(interaction.guild.members.me)
         .has(PermissionsBitField.Flags.Connect)
     ) {
-      return interaction.reply(
+      return interaction.editReply(
         "I do not have permission to join your voice channel!"
       );
     }
@@ -86,25 +94,129 @@ export default {
         .permissionsFor(interaction.guild.members.me)
         .has(PermissionsBitField.Flags.Speak)
     ) {
-      return interaction.reply(
+      return interaction.editReply(
         "I do not have permission to speak in your voice channel!"
       );
     }
 
-    await interaction.deferReply(); // Acknowledge the interaction to avoid timeouts
-
     if (interaction.options.getString("url")) {
-      let requested = interaction.options.getString("url");
-      console.log(requested);
-      return;
+      let url = interaction.options.getString("url");
+      console.log(url);
+
+      if (!ytdl.validateURL(url))
+        return void interaction.followUp({
+          content: "Invalid YouTube URL.",
+        });
+
+      try {
+        const connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: interaction.guild.id,
+          adapterCreator: interaction.guild.voiceAdapterCreator,
+        });
+
+        const audioBuffer = await downloadAudio(url);
+
+        // Create a PassThrough stream and write the buffer to it
+        const audioStream = new PassThrough();
+        audioStream.end(audioBuffer);
+
+        // Create an AudioResource from the PassThrough stream
+        const resource = createAudioResource(audioStream, {
+          inputType: StreamType.Arbitrary,
+        });
+
+        // Create an AudioPlayer and play the resource
+        const audioplayer = createAudioPlayer();
+        audioplayer.play(resource);
+        connection.subscribe(audioplayer);
+
+        // Handle playback events
+        audioplayer.on(AudioPlayerStatus.Idle, () => {
+          console.log("Playback finished.");
+          interaction.editReply("Playback finished.");
+        });
+
+        audioplayer.on("error", (error) => {
+          console.error("Error playing audio:", error);
+          interaction.editReply("Failed to play the audio.");
+        });
+
+        // const embed = new EmbedBuilder().setDescription(`Now playing audio!`);
+        const video = await fetchVideoInfo(url);
+
+        const embed = new EmbedBuilder()
+          .setDescription(
+            `**${video.duration} songs from [${video.title}](${video.webpage_url})** have been added to the Queue`
+          )
+          .setThumbnail(video.thumbnail ?? undefined);
+
+        await interaction.editReply({
+          embeds: [embed],
+        });
+      } catch (error) {
+        console.error("Error downloading audio:", error);
+        interaction.editReply("Failed to download or play the audio.");
+      }
+
+      async function downloadAudio(videoUrl) {
+        const ytDlpWrap = new YTDlpWrap();
+        const passThrough = new PassThrough();
+
+        // Options for downloading audio
+        const options = [
+          "-x", // Extract audio
+          "--audio-format",
+          "opus", // Output format
+          "-o",
+          "audio.mp3", // Output file
+        ];
+
+        // Download the audio into a buffer
+        return new Promise((resolve, reject) => {
+          const chunks = [];
+
+          const readableStream = ytDlpWrap.execStream([videoUrl, ...options]);
+
+          readableStream.on("data", (chunk) => {
+            chunks.push(chunk); // Collect data chunks
+          });
+
+          readableStream.on("end", () => {
+            const buffer = Buffer.concat(chunks); // Combine chunks into a buffer
+            resolve(buffer);
+          });
+
+          readableStream.on("error", (err) => {
+            reject(err);
+          });
+        });
+      }
+
+      // Example function to fetch playlist information
+      async function fetchVideoInfo(videoUrl) {
+        const ytDlpWrap = new YTDlpWrap();
+
+        // Fetch playlist metadata
+        const info = await ytDlpWrap.exec([videoUrl, "-J"]);
+        console.log(info);
+
+        const video = JSON.parse(info);
+
+        return {
+          title: video.title,
+          url: video.webpage_url,
+          thumbnail: video.thumbnail || null,
+          duration: video.duration,
+        };
+      }
     } else if (interaction.options.getString("song")) {
       const query = interaction.options.getString("song", true);
 
       try {
-        // Play the song in the voice channe
         const result = await player.play(voiceChannel, query, {
           nodeOptions: {
-            metadata: { channel: interaction.channel }, // Store text channel as metadata on the queue
+            metadata: { channel: interaction.channel },
           },
         });
 
@@ -119,7 +231,6 @@ export default {
           embeds: [embed],
         });
       } catch (error) {
-        // Handle any errors that occur
         switch (error.code) {
           case "ERR_NO_RESULT":
             await interaction.editReply(
@@ -145,7 +256,40 @@ export default {
       }
     } else if (interaction.options.getString("playlist")) {
       const query = interaction.options.getString("playlist", true);
+
+      player.extractors.register(SpotifyExtractor, { name: "spotify" });
+      player.extractors.register(SoundCloudExtractor, { name: "soundcloud" });
+
       try {
+        // Search for the playlist using the discord-player
+        const result = await player.search(query, {
+          requestedBy: interaction.user,
+          searchEngine: QueryType.YOUTUBE_PLAYLIST,
+        });
+
+        if (result.tracks.length === 0)
+          return void interaction.followUp({
+            content: `No playlists found with ${query}`,
+          });
+
+        // Add the tracks to the queue
+        const playlist = result.playlist;
+        await queue.addTracks(result.tracks);
+        // embed
+        //   .setDescription(
+        //     `**${result.tracks.length} songs from [${playlist.title}](${playlist.url})** have been added to the Queue`
+        //   )
+        //   .setThumbnail(playlist.thumbnail);
+
+        const embed = new EmbedBuilder()
+          .setDescription(
+            `**${result.tracks.length} songs from [${playlist.title}](${playlist.url})** have been added to the Queue`
+          )
+          .setThumbnail(playlist.thumbnail ?? undefined);
+
+        await interaction.editReply({
+          embeds: [embed],
+        });
       } catch (error) {
         // Handle any errors that occur
         switch (error.code) {

@@ -77,7 +77,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!command) return;
 
   try {
-    await command.default.execute({ interaction });
+    await command.default.execute({ client, interaction });
   } catch (err) {
     console.error(err);
     await interaction.reply("An error occured while executing that command.");
