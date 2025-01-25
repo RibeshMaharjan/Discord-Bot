@@ -1,17 +1,21 @@
 import {
   AttachmentExtractor,
-  DefaultExtractors,
   SoundCloudExtractor,
   SpotifyExtractor,
 } from "@discord-player/extractor";
-import { exec } from "child_process";
-import { useMainPlayer } from "discord-player";
+import ytdl from "@distube/ytdl-core";
+import { PassThrough } from "stream";
+
+import { QueryType, useMainPlayer, useQueue } from "discord-player";
+
 import {
   EmbedBuilder,
   PermissionsBitField,
-  REST,
   SlashCommandBuilder,
 } from "discord.js";
+
+import ytDlpWrapModule from "yt-dlp-wrap"; // Import the module
+const YTDlpWrap = ytDlpWrapModule.default; // Access the default export
 
 export default {
   data: new SlashCommandBuilder()
@@ -46,16 +50,20 @@ export default {
   execute: async ({ interaction }) => {
     // Get the player instance, song query and voice channel
     const player = useMainPlayer();
-    // Register the extractors
-    player.extractors.register(AttachmentExtractor, { name: "attachment" });
-    player.extractors.register(SpotifyExtractor, { name: "spotify" });
-    player.extractors.register(SoundCloudExtractor, { name: "soundcloud" });
+
+    await player.extractors.loadMulti([
+      AttachmentExtractor,
+      SpotifyExtractor,
+      SoundCloudExtractor,
+    ]);
 
     const voiceChannel = interaction.member.voice.channel;
 
+    await interaction.deferReply(); // Acknowledge the interaction to avoid timeouts
+
     // Check if the user is in a voice channel
     if (!voiceChannel) {
-      await interaction.reply("Your must be in a voice channel.");
+      await interaction.editReply("Your must be in a voice channel.");
       return;
     }
 
@@ -64,7 +72,7 @@ export default {
       interaction.guild.members.me.voice.channel &&
       interaction.guild.members.me.voice.channel !== voiceChannel
     ) {
-      return interaction.reply(
+      return interaction.editReply(
         "I am already playing in a different voice channel!"
       );
     }
@@ -75,7 +83,7 @@ export default {
         .permissionsFor(interaction.guild.members.me)
         .has(PermissionsBitField.Flags.Connect)
     ) {
-      return interaction.reply(
+      return interaction.editReply(
         "I do not have permission to join your voice channel!"
       );
     }
@@ -86,25 +94,118 @@ export default {
         .permissionsFor(interaction.guild.members.me)
         .has(PermissionsBitField.Flags.Speak)
     ) {
-      return interaction.reply(
+      return interaction.editReply(
         "I do not have permission to speak in your voice channel!"
       );
     }
 
-    await interaction.deferReply(); // Acknowledge the interaction to avoid timeouts
-
     if (interaction.options.getString("url")) {
-      let requested = interaction.options.getString("url");
-      console.log(requested);
-      return;
+      let url = interaction.options.getString("url");
+      console.log(url);
+
+      if (!ytdl.validateURL(url))
+        return void interaction.followUp({
+          content: "Invalid YouTube URL.",
+        });
+
+      try {
+        // Fetch video info
+        const ytDlpWrap = new YTDlpWrap();
+        const videometadata = await ytDlpWrap.getVideoInfo(url);
+        const metadata = await fetchVideoInfo(url);
+
+        // Extract opus format audio URL
+        const audioFormat = videometadata.formats.find(
+          (format) => format.acodec === "opus" // Audio-only format
+        );
+
+        if (!audioFormat) {
+          throw new Error("No audio stream found for this URL.");
+        }
+
+        let queue = useQueue(interaction.guild);
+        if (!queue) {
+          queue = player.nodes.create(interaction.guild, {
+            metadata: {
+              channel: interaction.channel,
+            },
+          });
+        }
+
+        // Assign audio metadata of current track to queue
+        queue.metadata.customMetadata = {
+          title: metadata.title,
+          thumbnail: metadata.thumbnail || null,
+          duration: metadata.duration,
+          requestedBy: interaction.user,
+        };
+
+        await player.play(voiceChannel, audioFormat.url, {
+          nodeOptions: {
+            metadata: {
+              channel: interaction.channel,
+            },
+          },
+        });
+
+        // Send an embed with the video info
+        const embed = new EmbedBuilder()
+          .setDescription(`Added **[${metadata.title}]** to the queue.`)
+          .setThumbnail(metadata.thumbnail || null)
+          .setFooter({ text: `Duration: ${metadata.duration}` });
+
+        await interaction.editReply({ embeds: [embed] });
+      } catch (error) {
+        switch (error.code) {
+          case "ERR_NO_RESULT":
+            await interaction.editReply(
+              `No results found for "${query}". Please try a different search term.`
+            );
+            break;
+          case "InteractionNotReplied":
+            await interaction.editReply(
+              "It seems I didn't respond in time. Please try again."
+            );
+            break;
+          case 10062:
+            await interaction.editReply(
+              "Unknown interaction error. The command might have expired."
+            );
+            break;
+          default:
+            const errorMessage =
+              error.message || "An error occurred while playing the song!";
+            await interaction.editReply(`Error: ${errorMessage}`);
+            break;
+        }
+      }
+
+      // fetch song information
+      async function fetchVideoInfo(videoUrl) {
+        const ytDlpWrap = new YTDlpWrap();
+
+        // Fetch song metadata
+        let metadata = await ytDlpWrap.getVideoInfo(videoUrl);
+
+        const minute = Math.floor(metadata.duration / 60);
+        const second = metadata.duration % 60;
+
+        const duration = `${minute}:${second}`;
+
+        return {
+          title: metadata.title,
+          url: metadata.webpage_url,
+          thumbnail: metadata.thumbnail || null,
+          duration: duration,
+        };
+      }
     } else if (interaction.options.getString("song")) {
       const query = interaction.options.getString("song", true);
 
       try {
-        // Play the song in the voice channe
         const result = await player.play(voiceChannel, query, {
           nodeOptions: {
-            metadata: { channel: interaction.channel }, // Store text channel as metadata on the queue
+            metadata: { channel: interaction.channel },
           },
         });
 
@@ -119,7 +220,6 @@ export default {
           embeds: [embed],
         });
       } catch (error) {
-        // Handle any errors that occur
         switch (error.code) {
           case "ERR_NO_RESULT":
             await interaction.editReply(
@@ -145,7 +245,40 @@ export default {
       }
     } else if (interaction.options.getString("playlist")) {
       const query = interaction.options.getString("playlist", true);
+
+      player.extractors.register(SpotifyExtractor, { name: "spotify" });
+      player.extractors.register(SoundCloudExtractor, { name: "soundcloud" });
+
       try {
+        // Search for the playlist using the discord-player
+        const result = await player.search(query, {
+          requestedBy: interaction.user,
+          searchEngine: QueryType.YOUTUBE_PLAYLIST,
+        });
+
+        if (result.tracks.length === 0)
+          return void interaction.followUp({
+            content: `No playlists found with ${query}`,
+          });
+
+        // Add the tracks to the queue
+        const playlist = result.playlist;
+        await queue.addTracks(result.tracks);
+        // embed
+        //   .setDescription(
+        //     `**${result.tracks.length} songs from [${playlist.title}](${playlist.url})** have been added to the Queue`
+        //   )
+        //   .setThumbnail(playlist.thumbnail);
+
+        const embed = new EmbedBuilder()
+          .setDescription(
+            `**${result.tracks.length} songs from [${playlist.title}](${playlist.url})** have been added to the Queue`
+          )
+          .setThumbnail(playlist.thumbnail ?? undefined);
+
+        await interaction.editReply({
+          embeds: [embed],
+        });
       } catch (error) {
         // Handle any errors that occur
         switch (error.code) {

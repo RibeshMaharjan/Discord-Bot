@@ -85,7 +85,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 /*
- * Handles the event when a track starts playinh
+ * handles the event when the track is add to queue
+ * Gets the metadata of the track stored(if available) on the queue
+ * @Purpose: to modify the track extracted from url
+ */
+client.player.events.on(GuildQueueEvent.AudioTrackAdd, async (queue, track) => {
+  const { customMetadata } = queue.metadata;
+
+  if (customMetadata) {
+    track.title = customMetadata.title;
+    track.thumbnail = customMetadata.thumbnail || null;
+    track.duration = customMetadata.duration;
+    track.requestedBy = customMetadata.requestedBy;
+  }
+
+  // remove the track metadata
+  queue.metadata.customMetadata = null;
+});
+
+/*
+ * Handles the event when a track starts playing
  * Gets the metadata stored on the queue
  * Sends the message to the channel
  */
@@ -93,8 +112,8 @@ client.player.events.on(GuildQueueEvent.PlayerStart, async (queue, track) => {
   const { channel } = queue.metadata;
 
   const embed = new EmbedBuilder()
-    .setDescription(`Now playing: **[${track.title}] (${track.url})**`)
-    // .setThumbnail(track.thumbnail)
+    .setDescription(`Now playing: **[${track.title}]**`)
+    .setThumbnail(track.thumbnail || null)
     .setFooter({ text: `Duration: ${track.duration}` });
 
   await channel.send({ embeds: [embed] });
@@ -109,8 +128,8 @@ client.player.events.on(GuildQueueEvent.PlayerFinish, async (queue, track) => {
   const { channel } = queue.metadata;
 
   const embed = new EmbedBuilder()
-    .setDescription(`Finished playing **[${track.title}] (${track.url})**`)
-    // .setThumbnail(track.thumbnail)
+    .setDescription(`Finished playing **[${track.title}]**`)
+    .setThumbnail(track.thumbnail || null)
     .setFooter({ text: `Duration: ${track.duration}` });
 
   await channel.send({ embeds: [embed] });
