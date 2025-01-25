@@ -10,7 +10,6 @@ import {
 } from "discord.js";
 import fs from "fs";
 import path from "path";
-import app from "./keepalive.js";
 const __dirname = import.meta.dirname;
 const client = new Client({
   intents: [
