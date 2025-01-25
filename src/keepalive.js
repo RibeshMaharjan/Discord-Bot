@@ -2,9 +2,7 @@ import express from "express";
 
 const app = express();
 
-app.get("/", (req, res) => {
-  res.send("I am Alive!!!");
-});
+app.get("/health", (req, res) => res.send("Bot is running"));
 
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
