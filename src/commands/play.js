@@ -1,20 +1,12 @@
 import {
   AttachmentExtractor,
-  DefaultExtractors,
   SoundCloudExtractor,
   SpotifyExtractor,
 } from "@discord-player/extractor";
-import {
-  AudioPlayerStatus,
-  createAudioPlayer,
-  createAudioResource,
-  joinVoiceChannel,
-  StreamType,
-} from "@discordjs/voice";
 import ytdl from "@distube/ytdl-core";
 import { PassThrough } from "stream";
 
-import { QueryType, useMainPlayer } from "discord-player";
+import { QueryType, useMainPlayer, useQueue } from "discord-player";
 
 import {
   EmbedBuilder,
@@ -117,80 +109,82 @@ export default {
         });
 
       try {
-        // Fetch video info using yt-dlp
+        // Fetch video info
         const ytDlpWrap = new YTDlpWrap();
-        const metadata = await ytDlpWrap.getVideoInfo(url);
+        const videometadata = await ytDlpWrap.getVideoInfo(url);
+        const metadata = await fetchVideoInfo(url);
 
-        // Extract audio stream URL
-        const audioFormat = metadata.formats.find(
+        // Extract opus format audio URL
+        const audioFormat = videometadata.formats.find(
           (format) => format.acodec === "opus" // Audio-only format
         );
-
-        // console.log(metadata.formats);
 
         if (!audioFormat) {
           throw new Error("No audio stream found for this URL.");
         }
 
-        const result = await player.play(voiceChannel, audioFormat.url, {
+        let queue = useQueue(interaction.guild);
+        if (!queue) {
+          queue = player.nodes.create(interaction.guild, {
+            metadata: {
+              channel: interaction.channel,
+            },
+          });
+        }
+
+        // Assign audio metadata of current track to queue
+        queue.metadata.customMetadata = {
+          title: metadata.title,
+          thumbnail: metadata.thumbnail || null,
+          duration: metadata.duration,
+          requestedBy: interaction.user,
+        };
+
+        await player.play(voiceChannel, audioFormat.url, {
           nodeOptions: {
-            metadata: { channel: interaction.channel },
+            metadata: {
+              channel: interaction.channel,
+            },
           },
         });
 
         // Send an embed with the video info
         const embed = new EmbedBuilder()
-          .setDescription(
-            `Added **[${metadata.title}](${metadata.webpage_url})** to the queue.`
-          )
+          .setDescription(`Added **[${metadata.title}]** to the queue.`)
           .setThumbnail(metadata.thumbnail || null)
           .setFooter({ text: `Duration: ${metadata.duration}` });
 
         await interaction.editReply({ embeds: [embed] });
       } catch (error) {
-        console.error("Error downloading audio:", error);
-        interaction.editReply("Failed to download or play the audio.");
+        switch (error.code) {
+          case "ERR_NO_RESULT":
+            await interaction.editReply(
+              `No results found for "${query}". Please try a different search term.`
+            );
+            break;
+          case "InteractionNotReplied":
+            await interaction.editReply(
+              "It seems I didn't respond in time. Please try again."
+            );
+            break;
+          case 10062:
+            await interaction.editReply(
+              "Unknown interaction error. The command might have expired."
+            );
+            break;
+          default:
+            const errorMessage =
+              error.message || "An error occurred while playing the song!";
+            await interaction.editReply(`Error: ${errorMessage}`);
+            break;
+        }
       }
 
-      async function downloadAudio(videoUrl) {
-        const ytDlpWrap = new YTDlpWrap();
-        const passThrough = new PassThrough();
-
-        // Options for downloading audio
-        const options = [
-          "-x", // Extract audio
-          "--audio-format",
-          "opus", // Output format
-          "-o",
-          "audio.mp3", // Output file
-        ];
-
-        // Download the audio into a buffer
-        return new Promise((resolve, reject) => {
-          const chunks = [];
-
-          const readableStream = ytDlpWrap.execStream([videoUrl, ...options]);
-
-          readableStream.on("data", (chunk) => {
-            chunks.push(chunk); // Collect data chunks
-          });
-
-          readableStream.on("end", () => {
-            const buffer = Buffer.concat(chunks); // Combine chunks into a buffer
-            resolve(buffer);
-          });
-
-          readableStream.on("error", (err) => {
-            reject(err);
-          });
-        });
-      }
-
-      // Example function to fetch playlist information
+      // fetch song information
       async function fetchVideoInfo(videoUrl) {
         const ytDlpWrap = new YTDlpWrap();
 
-        // Fetch playlist metadata
+        // Fetch song metadata
         let metadata = await ytDlpWrap.getVideoInfo(videoUrl);
 
         const minute = Math.floor(metadata.duration / 60);
