@@ -46,7 +46,6 @@ for (const file of commandFiles) {
 client.player = new Player(client);
 
 client.on(Events.ClientReady, (readyClient) => {
-  console.log(`Logged in as ${readyClient.user.tag}!`);
   const guildIds = client.guilds.cache.map((guild) => guild.id);
 
   const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -59,9 +58,7 @@ client.on(Events.ClientReady, (readyClient) => {
         body: commands,
       })
       .then(() => {
-        console.log(
-          `Successfully reloaded application (/) commands to ${guildId}.`
-        );
+        console.log(`Successfully reloaded application (/) commands.`);
       })
       .catch((err) => {
         console.error(err);

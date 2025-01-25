@@ -6,7 +6,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --env-file=.env --watch src/index.js",
+    "start": "node index.js",
+    "dev": "node --env-file=.env --watch src/index.js",
     "command": "node --env-file=.env src/command.js"
   },
   "keywords": [],
