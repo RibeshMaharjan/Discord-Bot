@@ -4,7 +4,6 @@ import {
   SpotifyExtractor,
 } from "@discord-player/extractor";
 import ytdl from "@distube/ytdl-core";
-import { PassThrough } from "stream";
 
 import { QueryType, useMainPlayer, useQueue } from "discord-player";
 
@@ -244,68 +243,17 @@ export default {
         }
       }
     } else if (interaction.options.getString("playlist")) {
-      const query = interaction.options.getString("playlist", true);
-
-      player.extractors.register(SpotifyExtractor, { name: "spotify" });
-      player.extractors.register(SoundCloudExtractor, { name: "soundcloud" });
-
-      try {
-        // Search for the playlist using the discord-player
-        const result = await player.search(query, {
-          requestedBy: interaction.user,
-          searchEngine: QueryType.YOUTUBE_PLAYLIST,
-        });
-
-        if (result.tracks.length === 0)
-          return void interaction.followUp({
-            content: `No playlists found with ${query}`,
-          });
-
-        // Add the tracks to the queue
-        const playlist = result.playlist;
-        await queue.addTracks(result.tracks);
-        // embed
-        //   .setDescription(
-        //     `**${result.tracks.length} songs from [${playlist.title}](${playlist.url})** have been added to the Queue`
-        //   )
-        //   .setThumbnail(playlist.thumbnail);
-
-        const embed = new EmbedBuilder()
-          .setDescription(
-            `**${result.tracks.length} songs from [${playlist.title}](${playlist.url})** have been added to the Queue`
-          )
-          .setThumbnail(playlist.thumbnail ?? undefined);
-
-        await interaction.editReply({
-          embeds: [embed],
-        });
-      } catch (error) {
-        // Handle any errors that occur
-        switch (error.code) {
-          case "ERR_NO_RESULT":
-            await interaction.editReply(
-              `No results found for "${query}". Please try a different search term.`
-            );
-            break;
-          case "InteractionNotReplied":
-            await interaction.editReply(
-              "It seems I didn't respond in time. Please try again."
-            );
-            break;
-          case 10062:
-            await interaction.editReply(
-              "Unknown interaction error. The command might have expired."
-            );
-            break;
-          default:
-            console.log(error);
-
-            const errorMessage =
-              error.message || "An error occurred while playing the song!";
-            await interaction.editReply(`Error: ${errorMessage}`);
-            break;
-        }
-      }
+      await interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xf39c12)
+            .setTitle("Playlist Slash Command - Coming Soon!")
+            .setDescription(
+              "The `/playlist` slash command still under development.\n\nIn the meantime, try other commands to enjoy music!"
+            )
+            .setFooter({ text: "Use /play to start music again!" }),
+        ],
+      });
     } else {
       await interaction.editReply(`Please atleast one option`);
       return;
