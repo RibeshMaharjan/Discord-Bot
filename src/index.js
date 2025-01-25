@@ -10,7 +10,7 @@ import {
 } from "discord.js";
 import fs from "fs";
 import path from "path";
-const __dirname = import.meta.dirname;
+import { fileURLToPath } from "url";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -24,6 +24,10 @@ const client = new Client({
 // Load all the commands
 const commands = [];
 client.commands = new Collection();
+
+// Derive __dirname in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const commandPath = path.join(__dirname, "commands");
 const commandFiles = fs
