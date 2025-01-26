@@ -157,16 +157,19 @@ export default {
       } catch (error) {
         switch (error.code) {
           case "ERR_NO_RESULT":
+            console.log(error);
             await interaction.editReply(
               `No results found for "${url}". Please try a different search term.`
             );
             break;
           case "InteractionNotReplied":
+            console.log(error);
             await interaction.editReply(
               "It seems I didn't respond in time. Please try again."
             );
             break;
           case 10062:
+            console.log(error);
             await interaction.editReply(
               "Unknown interaction error. The command might have expired."
             );
@@ -221,21 +224,25 @@ export default {
       } catch (error) {
         switch (error.code) {
           case "ERR_NO_RESULT":
+            console.log(error);
             await interaction.editReply(
               `No results found for "${query}". Please try a different search term.`
             );
             break;
           case "InteractionNotReplied":
+            console.log(error);
             await interaction.editReply(
               "It seems I didn't respond in time. Please try again."
             );
             break;
           case 10062:
+            console.log(error);
             await interaction.editReply(
               "Unknown interaction error. The command might have expired."
             );
             break;
           default:
+            console.log(error);
             const errorMessage =
               error.message || "An error occurred while playing the song!";
             await interaction.editReply(`Error: ${errorMessage}`);
