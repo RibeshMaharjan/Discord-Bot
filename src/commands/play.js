@@ -158,7 +158,7 @@ export default {
         switch (error.code) {
           case "ERR_NO_RESULT":
             await interaction.editReply(
-              `No results found for "${query}". Please try a different search term.`
+              `No results found for "${url}". Please try a different search term.`
             );
             break;
           case "InteractionNotReplied":
