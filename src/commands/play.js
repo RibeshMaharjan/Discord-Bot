@@ -107,10 +107,15 @@ export default {
           content: "Invalid YouTube URL.",
         });
 
+      // Path to cookies.txt file
+      const cookiesFilePath = "../../cookies.txt";
+
       try {
         // Fetch video info
         const ytDlpWrap = new YTDlpWrap();
-        const videometadata = await ytDlpWrap.getVideoInfo(url);
+        const videometadata = await ytDlpWrap.getVideoInfo(url, {
+          cookies: cookiesFilePath,
+        });
         const metadata = await fetchVideoInfo(url);
 
         // Extract opus format audio URL
@@ -121,6 +126,8 @@ export default {
         if (!audioFormat) {
           throw new Error("No audio stream found for this URL.");
         }
+
+        console.log(audioFormat);
 
         let queue = useQueue(interaction.guild);
         if (!queue) {
@@ -187,7 +194,9 @@ export default {
         const ytDlpWrap = new YTDlpWrap();
 
         // Fetch song metadata
-        let metadata = await ytDlpWrap.getVideoInfo(videoUrl);
+        let metadata = await ytDlpWrap.getVideoInfo(videoUrl, {
+          cookies: cookiesFilePath,
+        });
 
         const minute = Math.floor(metadata.duration / 60);
         const second = metadata.duration % 60;

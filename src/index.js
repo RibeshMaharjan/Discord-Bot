@@ -8,9 +8,11 @@ import {
   REST,
   Routes,
 } from "discord.js";
+import { config } from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+config();
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
