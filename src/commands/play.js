@@ -7,7 +7,7 @@ import ytdl from "@distube/ytdl-core";
 
 import { QueryType, useMainPlayer, useQueue } from "discord-player";
 import path from "path";
-import fs from "fs/promises";
+import fs from "fs";
 
 import {
   EmbedBuilder,
@@ -109,8 +109,18 @@ export default {
         });
 
       // Path to cookies.txt file
+     /*  const cookiesFilePath = "./cookies.txt";
+      const abspath = path.resolve(cookiesFilePath) */
+
+      // Step 2: Decode and write the contents to a cookie.txt file
       const cookiesFilePath = "./cookies.txt";
-      const abspath = path.resolve(cookiesFilePath)
+      const abspath = path.resolve(cookiesFilePath);
+
+      const cookieBase64 = process.env.COOKIE_TXT;
+      const cookieText = Buffer.from(cookieBase64, 'base64').toString('utf-8');
+
+      // Write the decoded content to cookie.txt
+      fs.writeFileSync(abspath, cookieText, 'utf8');
 
       try {
         // Fetch video info
