@@ -22,4 +22,4 @@ COPY . .
 EXPOSE 3000
 
 # Start your bot application
-CMD ["node", "index.js"]  # Adjust this to the entry point of your bot
+CMD ["node", "src/index.js"]  # Adjust this to the entry point of your bot
