@@ -6,6 +6,8 @@ import {
 import ytdl from "@distube/ytdl-core";
 
 import { QueryType, useMainPlayer, useQueue } from "discord-player";
+import path from "path";
+import fs from "fs/promises";
 
 import {
   EmbedBuilder,
@@ -100,7 +102,6 @@ export default {
 
     if (interaction.options.getString("url")) {
       let url = interaction.options.getString("url");
-      console.log(url);
 
       if (!ytdl.validateURL(url))
         return void interaction.followUp({
@@ -108,14 +109,28 @@ export default {
         });
 
       // Path to cookies.txt file
-      const cookiesFilePath = "../../cookies.txt";
+      const cookiesFilePath = "./cookies.txt";
+      const abspath = path.resolve(cookiesFilePath)
 
       try {
         // Fetch video info
         const ytDlpWrap = new YTDlpWrap();
-        const videometadata = await ytDlpWrap.getVideoInfo(url, {
-          cookies: cookiesFilePath,
-        });
+       /*  const videometadata = await ytDlpWrap.getVideoInfo(url, {
+          cookies: abspath,
+        }); */
+
+        let videometadataJson = await ytDlpWrap.execPromise([
+          url,
+          "--cookies",
+          abspath, // Pass cookies file
+          "--format",
+          "bestaudio/best", // Get best audio quality
+          "--no-warnings",
+          "--dump-json",
+        ]);
+
+        const videometadata = JSON.parse(videometadataJson);
+        
         const metadata = await fetchVideoInfo(url);
 
         // Extract opus format audio URL
@@ -126,8 +141,6 @@ export default {
         if (!audioFormat) {
           throw new Error("No audio stream found for this URL.");
         }
-
-        console.log(audioFormat);
 
         let queue = useQueue(interaction.guild);
         if (!queue) {
@@ -182,6 +195,7 @@ export default {
             );
             break;
           default:
+            console.log(error);
             const errorMessage =
               error.message || "An error occurred while playing the song!";
             await interaction.editReply(`Error: ${errorMessage}`);
@@ -194,9 +208,20 @@ export default {
         const ytDlpWrap = new YTDlpWrap();
 
         // Fetch song metadata
-        let metadata = await ytDlpWrap.getVideoInfo(videoUrl, {
-          cookies: cookiesFilePath,
-        });
+        /* let metadata = await ytDlpWrap.getVideoInfo(videoUrl, {
+          cookies: abspath,
+        }); */
+        let metadataJson = await ytDlpWrap.execPromise([
+          videoUrl,
+          "--cookies",
+          abspath, // Pass cookies file
+          "--format",
+          "bestaudio/best", // Get best audio quality
+          "--no-warnings",
+          "--dump-json",
+        ]);
+
+        const metadata = JSON.parse(metadataJson);
 
         const minute = Math.floor(metadata.duration / 60);
         const second = metadata.duration % 60;
