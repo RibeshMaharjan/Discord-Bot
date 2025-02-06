@@ -25,7 +25,6 @@ export default {
     // Checks if there is a queue, if not, notify the user and return
     if (!queue) {
       await interaction.reply("There is no song playing.");
-      return;
     }
 
     // Clears the queue and disconnects from the voice channel

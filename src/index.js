@@ -89,17 +89,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
  * @Purpose: to modify the track extracted from url
  */
 client.player.events.on(GuildQueueEvent.AudioTrackAdd, async (queue, track) => {
-  const { customMetadata } = queue.metadata;
+  const metadataMap = queue.metadata.customMetadata;
 
-  if (customMetadata) {
-    track.title = customMetadata.title;
-    track.thumbnail = customMetadata.thumbnail || null;
-    track.duration = customMetadata.duration;
-    track.requestedBy = customMetadata.requestedBy;
+  if (metadataMap && metadataMap.has(track.url)) {
+    const trackMetadata = metadataMap.get(track.url);
+
+    track.title = trackMetadata.title;
+    track.thumbnail = trackMetadata.thumbnail;
+    track.duration = trackMetadata.duration;
+    track.requestedBy = trackMetadata.requestedBy;
+
+    // Remove metadata after assigning to avoid memory leaks
+    metadataMap.delete(track.url);
   }
-
-  // remove the track metadata
-  queue.metadata.customMetadata = null;
 });
 
 /*

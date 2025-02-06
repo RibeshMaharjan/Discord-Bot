@@ -5,9 +5,9 @@ import {
 } from "@discord-player/extractor";
 import ytdl from "@distube/ytdl-core";
 
-import { QueryType, useMainPlayer, useQueue } from "discord-player";
-import path from "path";
+import { useMainPlayer, useQueue } from "discord-player";
 import fs from "fs";
+import path from "path";
 
 import {
   EmbedBuilder,
@@ -15,6 +15,7 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 
+import { count } from "console";
 import ytDlpWrapModule from "yt-dlp-wrap"; // Import the module
 const YTDlpWrap = ytDlpWrapModule.default; // Access the default export
 
@@ -46,7 +47,6 @@ export default {
     ),
   /* Command Execution code
    *Add song to the queue
-   *
    */
   execute: async ({ interaction }) => {
     // Get the player instance, song query and voice channel
@@ -54,8 +54,8 @@ export default {
 
     await player.extractors.loadMulti([
       AttachmentExtractor,
-      SpotifyExtractor,
       SoundCloudExtractor,
+      SpotifyExtractor,
     ]);
 
     const voiceChannel = interaction.member.voice.channel;
@@ -108,11 +108,7 @@ export default {
           content: "Invalid YouTube URL.",
         });
 
-      // Path to cookies.txt file
-     /*  const cookiesFilePath = "./cookies.txt";
-      const abspath = path.resolve(cookiesFilePath) */
-
-      // Step 2: Decode and write the contents to a cookie.txt file
+      // Decode and write the contents to a cookie.txt file
       const cookiesFilePath = "./cookies.txt";
       const abspath = path.resolve(cookiesFilePath);
 
@@ -123,59 +119,9 @@ export default {
       fs.writeFileSync(abspath, cookieText, 'utf8');
 
       try {
-        // Fetch video info
-        const ytDlpWrap = new YTDlpWrap();
-       /*  const videometadata = await ytDlpWrap.getVideoInfo(url, {
-          cookies: abspath,
-        }); */
-
-        let videometadataJson = await ytDlpWrap.execPromise([
-          url,
-          "--cookies",
-          abspath, // Pass cookies file
-          "--format",
-          "bestaudio/best", // Get best audio quality
-          "--no-warnings",
-          "--dump-json",
-        ]);
-
-        const videometadata = JSON.parse(videometadataJson);
         
-        const metadata = await fetchVideoInfo(url);
-
-        // Extract opus format audio URL
-        const audioFormat = videometadata.formats.find(
-          (format) => format.acodec === "opus" // Audio-only format
-        );
-
-        if (!audioFormat) {
-          throw new Error("No audio stream found for this URL.");
-        }
-
-        let queue = useQueue(interaction.guild);
-        if (!queue) {
-          queue = player.nodes.create(interaction.guild, {
-            metadata: {
-              channel: interaction.channel,
-            },
-          });
-        }
-
-        // Assign audio metadata of current track to queue
-        queue.metadata.customMetadata = {
-          title: metadata.title,
-          thumbnail: metadata.thumbnail || null,
-          duration: metadata.duration,
-          requestedBy: interaction.user,
-        };
-
-        await player.play(voiceChannel, audioFormat.url, {
-          nodeOptions: {
-            metadata: {
-              channel: interaction.channel,
-            },
-          },
-        });
+        const metadata = await fetchVideoInfo(url, abspath);
+        await playSingleSong(url, abspath);
 
         // Send an embed with the video info
         const embed = new EmbedBuilder()
@@ -212,54 +158,24 @@ export default {
             break;
         }
       }
-
-      // fetch song information
-      async function fetchVideoInfo(videoUrl) {
-        const ytDlpWrap = new YTDlpWrap();
-
-        // Fetch song metadata
-        /* let metadata = await ytDlpWrap.getVideoInfo(videoUrl, {
-          cookies: abspath,
-        }); */
-        let metadataJson = await ytDlpWrap.execPromise([
-          videoUrl,
-          "--cookies",
-          abspath, // Pass cookies file
-          "--format",
-          "bestaudio/best", // Get best audio quality
-          "--no-warnings",
-          "--dump-json",
-        ]);
-
-        const metadata = JSON.parse(metadataJson);
-
-        const minute = Math.floor(metadata.duration / 60);
-        const second = metadata.duration % 60;
-
-        const duration = `${minute}:${second}`;
-
-        return {
-          title: metadata.title,
-          url: metadata.webpage_url,
-          thumbnail: metadata.thumbnail || null,
-          duration: duration,
-        };
-      }
     } else if (interaction.options.getString("song")) {
       const query = interaction.options.getString("song", true);
 
       try {
         const result = await player.play(voiceChannel, query, {
           nodeOptions: {
-            metadata: { channel: interaction.channel },
+            metadata: { 
+              channel: interaction.channel,
+              customMetadata: new Map(),
+            },
           },
         });
-
+        
         const embed = new EmbedBuilder()
           .setDescription(
             `Added **[${result.track.title}](${result.track.url})** to the queue.`
           )
-          .setThumbnail(result.track.thumbnail ?? undefined)
+          .setThumbnail(result.track.thumbnail || undefined)
           .setFooter({ text: `Duration: ${result.track.duration}` });
 
         await interaction.editReply({
@@ -294,20 +210,177 @@ export default {
         }
       }
     } else if (interaction.options.getString("playlist")) {
-      await interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0xf39c12)
-            .setTitle("Playlist Slash Command - Coming Soon!")
-            .setDescription(
-              "The `/playlist` slash command still under development.\n\nIn the meantime, try other commands to enjoy music!"
-            )
-            .setFooter({ text: "Use /play to start music again!" }),
-        ],
-      });
+      let url = interaction.options.getString("playlist");
+
+      if (!ytdl.validateURL(url))
+        return void interaction.followUp({
+          content: "Invalid YouTube URL.",
+        });
+
+      // Decode and write the contents to a cookie.txt file
+      const cookiesFilePath = "./cookies.txt";
+      const abspath = path.resolve(cookiesFilePath);
+
+      const cookieBase64 = process.env.COOKIE_TXT;
+      const cookieText = Buffer.from(cookieBase64, 'base64').toString('utf-8');
+
+      // Write the decoded content to cookie.txt
+      fs.writeFileSync(abspath, cookieText, 'utf8');
+      console.log("read cookies.txt");
+      
+
+      try {
+        // Fetch video info
+        const ytDlpWrap = new YTDlpWrap();
+        
+        console.log('ytclp instalantiated');
+        // const metadata = await fetchVideoInfo(url);
+        let metadataJson = await ytDlpWrap.execPromise([
+          "--cookies",
+          abspath, // Pass cookies file// Get best audio quality,
+          "--flat-playlist",
+          "--no-warnings",
+          "--dump-single-json",
+          "--playlist-items", "1-10",
+          url,
+        ]);
+
+        const parsedmetadata = JSON.parse(metadataJson);
+        const playlistSongs = parsedmetadata.entries.map(element => element.url);
+        
+        const metadata =  {
+          title: parsedmetadata.title,
+          url: parsedmetadata.webpage_url,
+          thumbnail: parsedmetadata.thumbnails[0].url || null,
+          count: parsedmetadata.entries.length,
+        };
+        
+        playlistSongs.forEach(async (song) => {
+          playSingleSong(song, abspath);
+        });
+
+        // Send an embed with the video info
+        const embed = new EmbedBuilder()
+          .setDescription(`Added **[${metadata.title}]** to the queue.`)
+          .setThumbnail(metadata.thumbnail || null)
+          .setFooter({ text: `Count: ${metadata.count}` });
+
+        await interaction.editReply({ embeds: [embed] });
+      } catch (error) {
+        switch (error.code) {
+          case "ERR_NO_RESULT":
+            console.log(error);
+            await interaction.editReply(
+              `No results found for "${url}". Please try a different search term.`
+            );
+            break;
+          case "InteractionNotReplied":
+            console.log(error);
+            await interaction.editReply(
+              "It seems I didn't respond in time. Please try again."
+            );
+            break;
+          case 10062:
+            console.log(error);
+            await interaction.editReply(
+              "Unknown interaction error. The command might have expired."
+            );
+            break;
+          default:
+            console.log(error);
+            const errorMessage =
+              error.message || "An error occurred while playing the song!";
+            await interaction.editReply(`Error: ${errorMessage}`);
+            break;
+        }
+      }
     } else {
       await interaction.editReply(`Please atleast one option`);
       return;
+    }
+
+    async function playSingleSong(url, abspath) {
+      // Fetch video info
+      const ytDlpWrap = new YTDlpWrap();
+  
+      let videometadataJson = await ytDlpWrap.execPromise([
+        url,
+        "--cookies",
+        abspath, // Pass cookies file
+        "--format",
+        "bestaudio/best", // Get best audio quality
+        "--no-warnings",
+        "--dump-json",
+      ]);
+  
+      const videometadata = JSON.parse(videometadataJson);
+      const metadata = await fetchVideoInfo(url, abspath);
+  
+      // Extract opus format audio URL
+      const audioFormat = videometadata.formats.find(
+        (format) => format.acodec === "opus" // Audio-only format
+      );
+  
+      if (!audioFormat) {
+        await interaction.editReply("No audio stream found for this URL.");
+      }
+  
+      let queue = useQueue(interaction.guild);
+      if (!queue) {
+        queue = player.nodes.create(interaction.guild, {
+          metadata: {
+            channel: interaction.channel,
+            customMetadata: new Map(),
+          },
+        });
+      }
+  
+      try {
+        // Store metadata in queue.metadata.customMetadata (Map)
+        queue.metadata.customMetadata.set(audioFormat.url, {
+          title: metadata.title,
+          thumbnail: metadata.thumbnail || null,
+          duration: metadata.duration,
+          requestedBy: interaction.user,
+        });
+
+        await player.play(voiceChannel, audioFormat.url, {
+          nodeOptions: {
+            metadata: {
+              channel: interaction.channel,
+            },
+          },
+        });
+      } catch (error) {
+        await interaction.editReply("Could not add all songs")
+      }
+    }
+
+    // fetch song information
+    async function fetchVideoInfo(videoUrl, abspath) {
+      const ytDlpWrap = new YTDlpWrap();
+
+      let metadataJson = await ytDlpWrap.execPromise([
+        videoUrl,
+        "--cookies",
+        abspath, // Pass cookies file
+        "--format",
+        "bestaudio/best", // Get best audio quality
+        "--no-warnings",
+        "--dump-json",
+      ]);
+
+      const metadata = JSON.parse(metadataJson);
+      const minute = Math.floor(metadata.duration / 60);
+      const second = metadata.duration % 60;
+      const duration = `${minute}:${second}`;
+
+      return {
+        title: metadata.title,
+        url: metadata.webpage_url,
+        thumbnail: metadata.thumbnail || null,
+        duration: duration,
+      };
     }
   },
 };
