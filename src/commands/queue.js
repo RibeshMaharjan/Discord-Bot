@@ -45,7 +45,7 @@ export default {
           .setDescription(
             `**Currently Playing:**\n\` ${currentSong.title}\n\n**Queue:**\n${queueString}`
           )
-          .setThumbnail(currentSong.thumbnail),
+          .setThumbnail(currentSong.thumbnail || undefined),
       ],
     });
   },
